@@ -6,11 +6,14 @@ const connectWithUri = async (uri) => {
 };
 
 const connectDB = async () => {
+  if (mongoose.connection.readyState === 1) {
+    return;
+  }
+
   const uri = process.env.MONGO_URI;
 
   if (!uri) {
-    console.error("MongoDB connection failed: MONGO_URI is not set");
-    process.exit(1);
+    throw new Error("MongoDB connection failed: MONGO_URI is not set");
   }
 
   try {
@@ -29,13 +32,11 @@ const connectDB = async () => {
         console.log(`MongoDB connected: ${conn.connection.host}`);
         return;
       } catch (retryError) {
-        console.error("MongoDB connection failed:", retryError.message);
-        process.exit(1);
+        throw new Error(`MongoDB connection failed: ${retryError.message}`);
       }
     }
 
-    console.error("MongoDB connection failed:", error.message);
-    process.exit(1);
+    throw new Error(`MongoDB connection failed: ${error.message}`);
   }
 };
 
