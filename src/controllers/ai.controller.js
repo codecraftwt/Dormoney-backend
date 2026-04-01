@@ -11,7 +11,9 @@ const hasRecognizedSearchIntent = (filters = {}, keywordHints = []) => {
     Boolean(filters?.categories?.length) ||
     Boolean(filters?.amountRanges?.length) ||
     Boolean(filters?.deadlineStart) ||
-    Boolean(filters?.deadlineEnd);
+    Boolean(filters?.deadlineEnd) ||
+    typeof filters?.featured === "boolean" ||
+    typeof filters?.isActive === "boolean";
 
   if (hasStructuredFilters) return true;
 
@@ -25,9 +27,35 @@ const hasRecognizedSearchIntent = (filters = {}, keywordHints = []) => {
   );
 };
 
+const getAwardRankingSortDirection = (queryText = "") => {
+  const q = String(queryText).toLowerCase();
+  const asksHighest =
+    /(highest|largest|maximum|max|top)\s+(award|amount)/.test(q) ||
+    /(award|amount)\s+(highest|largest|maximum|max)/.test(q);
+  if (asksHighest) return -1;
+
+  const asksLowest =
+    /(lowest|smallest|minimum|min)\s+(award|amount)/.test(q) ||
+    /(award|amount)\s+(lowest|smallest|minimum|min)/.test(q);
+  if (asksLowest) return 1;
+
+  return 0;
+};
+
+const getRequestedResultLimit = (queryText = "", hasAwardRankingIntent = false) => {
+  const q = String(queryText).toLowerCase();
+  const explicitLimitMatch = q.match(/\btop\s+(\d+)\b|\bfirst\s+(\d+)\b/);
+  const explicitLimit = Number(explicitLimitMatch?.[1] || explicitLimitMatch?.[2] || 0);
+  if (explicitLimit > 0) return explicitLimit;
+  if (hasAwardRankingIntent) return 1;
+  return 0;
+};
+
 const aiSearch = async (req, res, next) => {
   try {
     const queryText = String(req.body.query || "").trim();
+    const awardSortDirection = getAwardRankingSortDirection(queryText);
+    const resultLimit = getRequestedResultLimit(queryText, Boolean(awardSortDirection));
     if (!queryText) {
       return res.status(400).json({ message: "query is required" });
     }
@@ -42,7 +70,7 @@ const aiSearch = async (req, res, next) => {
       const fallbackFilters = extractFiltersFromTextFallback(queryText, {
         keywordHints,
       });
-      if (!hasRecognizedSearchIntent(fallbackFilters, keywordHints)) {
+      if (!awardSortDirection && !hasRecognizedSearchIntent(fallbackFilters, keywordHints)) {
         return res.status(200).json({
           filters: fallbackFilters,
           scholarships: [],
@@ -53,11 +81,23 @@ const aiSearch = async (req, res, next) => {
         activeOnly: true,
         ...fallbackFilters,
       });
-      const fallbackScholarships = await Scholarship.find(fallbackQuery).sort({
+      if (awardSortDirection) {
+        const existingAmountCondition = fallbackQuery.awardAmountValue;
+        fallbackQuery.awardAmountValue =
+          existingAmountCondition && typeof existingAmountCondition === "object"
+            ? { ...existingAmountCondition, $ne: null }
+            : { $ne: null };
+      }
+      let fallbackScholarshipQuery = Scholarship.find(fallbackQuery).sort({
+        ...(awardSortDirection ? { awardAmountValue: awardSortDirection } : {}),
         featured: -1,
         deadline: 1,
         createdAt: -1,
       });
+      if (resultLimit > 0) {
+        fallbackScholarshipQuery = fallbackScholarshipQuery.limit(resultLimit);
+      }
+      const fallbackScholarships = await fallbackScholarshipQuery;
       return res.status(200).json({
         filters: fallbackFilters,
         scholarships: fallbackScholarships,
@@ -78,7 +118,7 @@ const aiSearch = async (req, res, next) => {
 
       aiFilters = extractFiltersFromTextFallback(queryText, { keywordHints });
     }
-    if (!hasRecognizedSearchIntent(aiFilters, keywordHints)) {
+    if (!awardSortDirection && !hasRecognizedSearchIntent(aiFilters, keywordHints)) {
       return res.status(200).json({
         filters: aiFilters,
         scholarships: [],
@@ -90,12 +130,24 @@ const aiSearch = async (req, res, next) => {
       activeOnly: true,
       ...aiFilters,
     });
+    if (awardSortDirection) {
+      const existingAmountCondition = query.awardAmountValue;
+      query.awardAmountValue =
+        existingAmountCondition && typeof existingAmountCondition === "object"
+          ? { ...existingAmountCondition, $ne: null }
+          : { $ne: null };
+    }
 
-    const scholarships = await Scholarship.find(query).sort({
+    let scholarshipQuery = Scholarship.find(query).sort({
+      ...(awardSortDirection ? { awardAmountValue: awardSortDirection } : {}),
       featured: -1,
       deadline: 1,
       createdAt: -1,
     });
+    if (resultLimit > 0) {
+      scholarshipQuery = scholarshipQuery.limit(resultLimit);
+    }
+    const scholarships = await scholarshipQuery;
 
     return res.status(200).json({
       filters: aiFilters,

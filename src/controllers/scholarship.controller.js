@@ -73,8 +73,17 @@ const buildScholarshipQuery = (filters = {}) => {
   const query = {};
   const andConditions = [];
 
-  if (filters.activeOnly === true || filters.activeOnly === "true") {
+  const hasExplicitIsActive = typeof filters.isActive === "boolean";
+  if (hasExplicitIsActive) {
+    query.isActive = filters.isActive;
+  } else if (filters.activeOnly === true || filters.activeOnly === "true") {
     query.isActive = true;
+  }
+
+  if (typeof filters.featured === "boolean") {
+    query.featured = filters.featured;
+  } else if (filters.featuredOnly === true || filters.featuredOnly === "true") {
+    query.featured = true;
   }
 
   if (filters.categories && filters.categories.length) {

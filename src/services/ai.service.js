@@ -18,6 +18,8 @@ Allowed keys:
 - includeVaries: boolean
 - deadlineStart: string YYYY-MM-DD or null
 - deadlineEnd: string YYYY-MM-DD or null
+- featured: boolean or null
+- isActive: boolean or null
 - keywords: array of short keyword strings
 
 Rules:
@@ -46,6 +48,108 @@ const parseJsonSafely = (raw) => {
 };
 
 const todayIsoDate = () => new Date().toISOString().slice(0, 10);
+const MONTH_INDEX = {
+  january: 0,
+  jan: 0,
+  february: 1,
+  feb: 1,
+  march: 2,
+  mar: 2,
+  april: 3,
+  apr: 3,
+  may: 4,
+  june: 5,
+  jun: 5,
+  july: 6,
+  jul: 6,
+  august: 7,
+  aug: 7,
+  september: 8,
+  sept: 8,
+  sep: 8,
+  october: 9,
+  oct: 9,
+  november: 10,
+  nov: 10,
+  december: 11,
+  dec: 11,
+};
+
+const toIsoDate = (year, monthIndex, day) => {
+  if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || !Number.isInteger(day)) {
+    return null;
+  }
+  const date = new Date(Date.UTC(year, monthIndex, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== monthIndex ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date.toISOString().slice(0, 10);
+};
+
+const parseDateFromText = (text, now = new Date()) => {
+  const q = String(text || "").toLowerCase().trim();
+  if (!q) return null;
+
+  const isoMatch = q.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (isoMatch) {
+    return toIsoDate(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+  }
+
+  const slashMatch = q.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if (slashMatch) {
+    const left = Number(slashMatch[1]);
+    const right = Number(slashMatch[2]);
+    const year = Number(slashMatch[3]);
+    // Prefer DD/MM/YYYY, then fallback to MM/DD/YYYY.
+    return toIsoDate(year, right - 1, left) || toIsoDate(year, left - 1, right);
+  }
+
+  const monthDayYear = q.match(
+    /\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,)?\s+(\d{4})\b/
+  );
+  if (monthDayYear) {
+    const monthIndex = MONTH_INDEX[monthDayYear[1]];
+    return toIsoDate(Number(monthDayYear[3]), monthIndex, Number(monthDayYear[2]));
+  }
+
+  const dayMonthYear = q.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)(?:,)?\s+(\d{4})\b/
+  );
+  if (dayMonthYear) {
+    const monthIndex = MONTH_INDEX[dayMonthYear[2]];
+    return toIsoDate(Number(dayMonthYear[3]), monthIndex, Number(dayMonthYear[1]));
+  }
+
+  return null;
+};
+
+const parseMonthYearFromText = (text, now = new Date()) => {
+  const q = String(text || "").toLowerCase().trim();
+  const monthYearMatch = q.match(
+    /\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)(?:\s+(\d{4}))?\b/
+  );
+  if (!monthYearMatch) return null;
+  const monthIndex = MONTH_INDEX[monthYearMatch[1]];
+  const year = monthYearMatch[2] ? Number(monthYearMatch[2]) : now.getFullYear();
+  return { monthIndex, year };
+};
+
+const getMonthDateRange = ({ monthIndex, year }) => {
+  const start = toIsoDate(year, monthIndex, 1);
+  const endDate = new Date(Date.UTC(year, monthIndex + 1, 0));
+  const end = endDate.toISOString().slice(0, 10);
+  return { start, end };
+};
+
+const sanitizeDateInput = (value) => {
+  if (!value) return null;
+  const parsed = parseDateFromText(String(value));
+  return parsed || null;
+};
 const STOPWORDS = new Set([
   "show",
   "me",
@@ -55,6 +159,8 @@ const STOPWORDS = new Set([
   "scholarship",
   "scholarships",
   "which",
+  "who",
+  "whose",
   "that",
   "is",
   "are",
@@ -70,8 +176,20 @@ const STOPWORDS = new Set([
   "find",
   "need",
   "want",
+  "deadline",
+  "deadlines",
+  "due",
+  "date",
+  "before",
+  "after",
+  "from",
+  "until",
+  "by",
+  "on",
   "active",
+  "inactive",
   "expired",
+  "featured",
   "not",
   "under",
   "over",
@@ -81,6 +199,41 @@ const STOPWORDS = new Set([
   "least",
   "most",
   "amount",
+  "award",
+  "awards",
+  "highest",
+  "lowest",
+  "maximum",
+  "minimum",
+  "max",
+  "min",
+  "top",
+  "largest",
+  "smallest",
+  "january",
+  "jan",
+  "february",
+  "feb",
+  "march",
+  "mar",
+  "april",
+  "apr",
+  "may",
+  "june",
+  "jun",
+  "july",
+  "jul",
+  "august",
+  "aug",
+  "september",
+  "sept",
+  "sep",
+  "october",
+  "oct",
+  "november",
+  "nov",
+  "december",
+  "dec",
 ]);
 
 const CATEGORY_PATTERNS = [
@@ -131,6 +284,20 @@ const addHintMatchedKeywords = (queryText, hintKeywords = []) => {
   return hintKeywords.filter((hint) =>
     queryTokens.some((token) => hint.includes(token) || token.includes(hint))
   );
+};
+
+const normalizeKeywords = (values = []) => {
+  const source = Array.isArray(values) ? values : [values];
+  const flattenedTokens = source
+    .flatMap((value) =>
+      String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+    )
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !STOPWORDS.has(token) && !/^\d+$/.test(token));
+  return [...new Set(flattenedTokens)].slice(0, 6);
 };
 
 const normalizeAmountRange = (value) => {
@@ -184,24 +351,82 @@ const extractFiltersFromTextFallback = (userQuery, options = {}) => {
 
   let deadlineStart = null;
   let deadlineEnd = null;
+  let featured = null;
+  let isActive = null;
+  if (/\bfeatured\b|\bhighlighted\b/.test(q)) {
+    featured = true;
+  }
+  if (/\binactive\b|\bnot active\b|\bclosed\b|\bdisabled\b/.test(q)) {
+    isActive = false;
+  } else if (/\bactive\b|\bopen now\b/.test(q)) {
+    isActive = true;
+  }
   if (
     q.includes("not expired") ||
-    q.includes("active") ||
     q.includes("upcoming") ||
     q.includes("open now")
   ) {
     deadlineStart = todayIsoDate();
   }
-  const before = q.match(/(?:before|until|by)\s+([a-z]+\s+\d{4}|\d{4}-\d{2}-\d{2})/i);
-  if (before) {
-    deadlineEnd = before[1];
+  const exactDateText = q.match(
+    /(?:deadline\s*(?:is|=)?|on|due(?:\s+date)?(?:\s+is)?)\s+([a-z0-9,\-/\s]+)/
+  );
+  const exactDate = parseDateFromText(exactDateText?.[1]);
+  if (exactDate) {
+    deadlineStart = exactDate;
+    deadlineEnd = exactDate;
+  }
+
+  const beforeDateText = q.match(/(?:before|until|by)\s+([a-z0-9,\-/\s]+)/);
+  if (beforeDateText) {
+    const explicitDate = parseDateFromText(beforeDateText[1]);
+    if (explicitDate) {
+      deadlineEnd = explicitDate;
+    } else {
+      const monthYear = parseMonthYearFromText(beforeDateText[1]);
+      if (monthYear) {
+        const endOfPreviousMonth = toIsoDate(monthYear.year, monthYear.monthIndex, 1);
+        if (endOfPreviousMonth) {
+          const date = new Date(`${endOfPreviousMonth}T00:00:00.000Z`);
+          date.setUTCDate(date.getUTCDate() - 1);
+          deadlineEnd = date.toISOString().slice(0, 10);
+        }
+      }
+    }
+  }
+
+  const afterDateText = q.match(/(?:after|from)\s+([a-z0-9,\-/\s]+)/);
+  if (afterDateText) {
+    const explicitDate = parseDateFromText(afterDateText[1]);
+    if (explicitDate) {
+      deadlineStart = explicitDate;
+    } else {
+      const monthYear = parseMonthYearFromText(afterDateText[1]);
+      if (monthYear) {
+        const nextMonth = monthYear.monthIndex === 11 ? 0 : monthYear.monthIndex + 1;
+        const year = monthYear.monthIndex === 11 ? monthYear.year + 1 : monthYear.year;
+        deadlineStart = toIsoDate(year, nextMonth, 1) || deadlineStart;
+      }
+    }
+  }
+
+  const inMonthText = q.match(/(?:in|during|within)\s+([a-z0-9,\-\s]+)/);
+  if (inMonthText && !exactDate && !beforeDateText && !afterDateText) {
+    const monthYear = parseMonthYearFromText(inMonthText[1]);
+    if (monthYear) {
+      const range = getMonthDateRange(monthYear);
+      deadlineStart = range.start;
+      deadlineEnd = range.end;
+    }
   }
 
   return {
     categories: uniqueCategories,
     amountRanges,
-    deadlineStart,
-    deadlineEnd,
+    deadlineStart: sanitizeDateInput(deadlineStart) || deadlineStart,
+    deadlineEnd: sanitizeDateInput(deadlineEnd) || deadlineEnd,
+    featured,
+    isActive,
     keywords: [
       ...new Set([
         ...extractKeywordsFromText(userQuery),
@@ -212,6 +437,15 @@ const extractFiltersFromTextFallback = (userQuery, options = {}) => {
 };
 
 const normalizeAiPayload = (parsed = {}) => {
+  const normalizeBooleanOrNull = (value) => {
+    if (value === true || value === false) return value;
+    if (value === null || value === undefined) return null;
+    const text = String(value).toLowerCase().trim();
+    if (["true", "yes", "1", "featured", "active"].includes(text)) return true;
+    if (["false", "no", "0", "inactive", "not active"].includes(text)) return false;
+    return null;
+  };
+
   const rawCategories = parsed.categories || parsed.category || [];
   const categories = Array.isArray(rawCategories)
     ? rawCategories
@@ -239,11 +473,8 @@ const normalizeAiPayload = (parsed = {}) => {
   }
 
   const rawKeywords = parsed.keywords || parsed.keyword || [];
-  const keywords = Array.isArray(rawKeywords)
-    ? rawKeywords.map((value) => String(value).trim()).filter(Boolean)
-    : [String(rawKeywords).trim()].filter(Boolean);
-  const normalizedKeywords = keywords.length
-    ? keywords
+  const normalizedKeywords = normalizeKeywords(rawKeywords).length
+    ? normalizeKeywords(rawKeywords)
     : extractKeywordsFromText(
         [
           parsed.query,
@@ -259,8 +490,14 @@ const normalizeAiPayload = (parsed = {}) => {
   return {
     categories: [...new Set(categories)],
     amountRanges: [...new Set(amountRanges)],
-    deadlineStart: parsed.deadlineStart || parsed.deadline_start || null,
-    deadlineEnd: parsed.deadlineEnd || parsed.deadline_end || null,
+    deadlineStart: sanitizeDateInput(parsed.deadlineStart || parsed.deadline_start),
+    deadlineEnd: sanitizeDateInput(parsed.deadlineEnd || parsed.deadline_end),
+    featured: normalizeBooleanOrNull(
+      parsed.featured ?? parsed.isFeatured ?? parsed.featuredOnly
+    ),
+    isActive: normalizeBooleanOrNull(
+      parsed.isActive ?? parsed.active ?? parsed.activeOnly ?? parsed.status
+    ),
     keywords: normalizedKeywords,
   };
 };
@@ -272,6 +509,18 @@ const mergeFilters = (primary, fallback) => ({
     : fallback.amountRanges,
   deadlineStart: primary.deadlineStart || fallback.deadlineStart || null,
   deadlineEnd: primary.deadlineEnd || fallback.deadlineEnd || null,
+  featured:
+    typeof primary.featured === "boolean"
+      ? primary.featured
+      : typeof fallback.featured === "boolean"
+      ? fallback.featured
+      : null,
+  isActive:
+    typeof primary.isActive === "boolean"
+      ? primary.isActive
+      : typeof fallback.isActive === "boolean"
+      ? fallback.isActive
+      : null,
   keywords: primary.keywords?.length ? primary.keywords : fallback.keywords,
 });
 
