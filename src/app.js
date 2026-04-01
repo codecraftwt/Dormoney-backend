@@ -10,9 +10,27 @@ const aiRoutes = require("./routes/ai.routes");
 
 const app = express();
 
+const parseAllowedOrigins = () => {
+  const rawOrigins = process.env.CLIENT_URLS || process.env.CLIENT_URL || "";
+  return rawOrigins
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+};
+
+const allowedOrigins = parseAllowedOrigins();
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "*",
+    origin(origin, callback) {
+      // Allow server-to-server and non-browser requests.
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.length === 0) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+
+      return callback(new Error("Not allowed by CORS"));
+    },
   })
 );
 app.use(helmet());
