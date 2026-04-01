@@ -14,7 +14,7 @@ const parseAllowedOrigins = () => {
   const rawOrigins = process.env.CLIENT_URLS || process.env.CLIENT_URL || "";
   return rawOrigins
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter(Boolean);
 };
 
@@ -25,9 +25,10 @@ app.use(
     origin(origin, callback) {
       // Allow server-to-server and non-browser requests.
       if (!origin) return callback(null, true);
+      const normalizedOrigin = origin.replace(/\/+$/, "");
 
       if (allowedOrigins.length === 0) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedOrigins.includes(normalizedOrigin)) return callback(null, true);
 
       return callback(new Error("Not allowed by CORS"));
     },
