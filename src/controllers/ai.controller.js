@@ -62,7 +62,14 @@ const aiSearch = async (req, res, next) => {
 
     const scholarshipHintsSource = await Scholarship.find(
       { isActive: true },
-      { name: 1, category: 1 }
+      {
+        name: 1,
+        category: 1,
+        description: 1,
+        eligibleMajors: 1,
+        specialEligibility: 1,
+        organizationName: 1,
+      }
     ).lean();
     const keywordHints = buildKeywordHintsFromScholarships(scholarshipHintsSource);
 

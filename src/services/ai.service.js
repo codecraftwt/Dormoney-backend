@@ -270,7 +270,14 @@ const extractKeywordsFromText = (text) => {
 };
 
 const buildKeywordHintsFromScholarships = (scholarships = []) => {
-  const raw = scholarships.flatMap((item) => [item?.name || "", item?.category || ""]);
+  const raw = scholarships.flatMap((item) => [
+    item?.name || "",
+    item?.category || "",
+    item?.description || "",
+    item?.eligibleMajors || "",
+    item?.specialEligibility || "",
+    item?.organizationName || "",
+  ]);
   const keywords = raw
     .flatMap((text) => String(text).split(/\s+/))
     .map((token) => token.toLowerCase().replace(/[^a-z0-9]/g, "").trim())
