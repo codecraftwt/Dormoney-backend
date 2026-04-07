@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   listScholarships,
+  matchScholarships,
   createScholarship,
   updateScholarship,
   deleteScholarship,
@@ -11,6 +12,7 @@ const { protect, requireAdmin } = require("../middleware/auth.middleware");
 const router = express.Router();
 
 router.get("/", protect, listScholarships);
+router.get("/match", protect, matchScholarships);
 router.post("/", protect, requireAdmin, createScholarship);
 router.put("/:id", protect, requireAdmin, updateScholarship);
 router.delete("/:id", protect, requireAdmin, deleteScholarship);

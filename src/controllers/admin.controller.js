@@ -52,8 +52,10 @@ const createUser = async (req, res, next) => {
     if (!email || !password || !phone) {
       return res.status(400).json({ message: "Email, password, and phone are required" });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    if (password.length < 8 || !/\d/.test(password)) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters and include at least 1 number",
+      });
     }
     if (role !== "user" && role !== "admin") {
       return res.status(400).json({ message: "role must be 'user' or 'admin'" });
@@ -64,8 +66,8 @@ const createUser = async (req, res, next) => {
       return res.status(409).json({ message: "Email is already registered" });
     }
 
-    const user = await User.create({ email, password, phone, role });
-    const safe = await User.findById(user._id).select("-password").lean();
+    const user = await User.create({ email, password_hash: password, phone, role });
+    const safe = await User.findById(user._id).select("-password -password_hash").lean();
     return res.status(201).json({ user: safe });
   } catch (error) {
     return next(error);
@@ -92,7 +94,7 @@ const listUsers = async (req, res, next) => {
 
     const total = await User.countDocuments(query);
     const users = await User.find(query)
-      .select("-password")
+      .select("-password -password_hash")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -136,7 +138,7 @@ const updateUserRole = async (req, res, next) => {
     target.role = role;
     await target.save();
 
-    const user = await User.findById(id).select("-password").lean();
+    const user = await User.findById(id).select("-password -password_hash").lean();
     return res.status(200).json({ user });
   } catch (error) {
     return next(error);

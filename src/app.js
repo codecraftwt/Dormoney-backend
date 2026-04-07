@@ -8,6 +8,7 @@ const authRoutes = require("./routes/auth.routes");
 const scholarshipRoutes = require("./routes/scholarship.routes");
 const aiRoutes = require("./routes/ai.routes");
 const adminRoutes = require("./routes/admin.routes");
+const userRoutes = require("./routes/user.routes");
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/scholarships", scholarshipRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/users", userRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

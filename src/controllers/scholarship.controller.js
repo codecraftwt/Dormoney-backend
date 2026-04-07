@@ -231,6 +231,109 @@ const buildScholarshipQuery = (filters = {}) => {
   return query;
 };
 
+const GPA_MIN_BY_RANGE = {
+  "Below 2.5": 0,
+  "2.5 - 3.0": 2.5,
+  "2.5 – 3.0": 2.5,
+  "3.0 - 3.5": 3.0,
+  "3.0 – 3.5": 3.0,
+  "3.5 - 4.0": 3.5,
+  "3.5 – 4.0": 3.5,
+};
+
+const toGradeBucket = (gradeLevel) => {
+  const value = String(gradeLevel || "").toLowerCase();
+  if (value.includes("9th") || value.includes("10th") || value.includes("11th") || value.includes("12th")) {
+    return "high_school";
+  }
+  if (value.includes("graduate")) return "graduate";
+  if (value.includes("college")) return "undergraduate";
+  return "";
+};
+
+const matchScholarships = async (req, res, next) => {
+  try {
+    const user = req.user;
+    const userState = String(user.state || "").trim().toUpperCase();
+    const userFields = Array.isArray(user.fields_of_study) ? user.fields_of_study : [];
+    const userBackground = Array.isArray(user.background_tags) ? user.background_tags : [];
+    const userInvolvement = Array.isArray(user.involvement_tags) ? user.involvement_tags : [];
+    const userGradeBucket = toGradeBucket(user.grade_level);
+    const userGpaMin = GPA_MIN_BY_RANGE[String(user.gpa_range || "").trim()] ?? 0;
+
+    const scholarships = await Scholarship.find({ isActive: true }).lean();
+
+    const matched = scholarships
+      .map((item) => {
+        let score = 0;
+        const reasons = [];
+
+        const eligibleStatesRaw = String(item.eligibleStates || "ALL");
+        const eligibleStates = eligibleStatesRaw
+          .split(",")
+          .map((s) => s.trim().toUpperCase())
+          .filter(Boolean);
+        const stateMatch =
+          eligibleStatesRaw.toUpperCase() === "ALL" ||
+          !userState ||
+          eligibleStates.includes(userState);
+        if (!stateMatch) return null;
+        score += 20;
+
+        if (item.minGpaRequired === null || item.minGpaRequired <= userGpaMin) {
+          score += 15;
+        } else {
+          return null;
+        }
+
+        if (userGradeBucket && Array.isArray(item.gradeLevels) && item.gradeLevels.length > 0) {
+          if (item.gradeLevels.includes(userGradeBucket)) {
+            score += 20;
+            reasons.push("grade level");
+          } else {
+            return null;
+          }
+        }
+
+        const majorsText = String(item.eligibleMajors || "").toLowerCase();
+        const fieldsHit = userFields.filter((field) =>
+          majorsText.includes(String(field).toLowerCase())
+        );
+        if (fieldsHit.length) {
+          score += 20 + fieldsHit.length * 3;
+          reasons.push("field of study");
+        }
+
+        const specialText = String(item.specialEligibility || "").toLowerCase();
+        const tagHits = [...userBackground, ...userInvolvement].filter((tag) =>
+          specialText.includes(String(tag).toLowerCase())
+        );
+        if (tagHits.length) {
+          score += 12 + tagHits.length * 2;
+          reasons.push("background/involvement");
+        }
+
+        if (item.featured) score += 4;
+        if (item.deadline) score += 1;
+
+        return {
+          ...item,
+          match_score: score,
+          match_reasons: reasons,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b.match_score !== a.match_score) return b.match_score - a.match_score;
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      });
+
+    return res.status(200).json({ scholarships: matched });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const listScholarships = async (req, res, next) => {
   try {
     const query = buildScholarshipQuery({
@@ -400,6 +503,7 @@ const toggleScholarshipStatus = async (req, res, next) => {
 
 module.exports = {
   listScholarships,
+  matchScholarships,
   createScholarship,
   updateScholarship,
   deleteScholarship,
